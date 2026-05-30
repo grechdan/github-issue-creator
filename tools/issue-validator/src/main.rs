@@ -1,16 +1,39 @@
-use std::env;
-use std::process;
+use anyhow::Result;
+use clap::Parser;
+use serde::Deserialize;
+use std::path::PathBuf;
 
-fn main() {
-    let mut args = env::args();
+#[derive(Debug, Parser)]
+#[command(
+    name = "issue-validator",
+    about = "Validate GitHub issue definitions from a YAML file"
+)]
+struct Cli {
+    #[arg(value_name = "ISSUES_FILE")]
+    input: PathBuf,
+}
 
-    let program_name = args.next().unwrap_or_else(|| "issue-validator".to_string());
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct IssuesFile {
+    issues: Vec<Issue>,
+}
 
-    let Some(input_file) = args.next() else {
-        eprintln!("Usage: {program_name} <issues-file>");
-        process::exit(1);
-    };
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct Issue {
+    title: String,
+    body: String,
+    labels: Option<Vec<String>>,
+    assignees: Option<Vec<String>>,
+    milestone: Option<String>,
+}
 
-    println!("Starting validation for: {input_file}");
-    println!("Temporary success: validation logic is not implemented yet.");
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    println!("Starting validation for: {}", cli.input.display());
+    println!("Temporary success: YAML loading is not implemented yet.");
+
+    Ok(())
 }
