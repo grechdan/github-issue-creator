@@ -1,0 +1,60 @@
+issues:
+  - title: "Document the issues.yml schema"
+    body: |
+      ## Goal
+
+      Document the first stable `issues.yml` schema used by the validator and
+      Bash wrapper.
+
+      ## Context
+
+      The repository uses `issues.yml` as the source of truth for GitHub issue
+      creation. The expected shape needs to be clear before the Rust validator
+      and shell script depend on it.
+
+      ## Tasks
+
+      - [ ] Describe the root-level `issues:` array.
+      - [ ] List required fields: `title` and `body`.
+      - [ ] List optional fields: `labels`, `assignees`, and `milestone`.
+      - [ ] Add a short YAML example to the documentation.
+
+      ## Done when
+
+      - [ ] The schema is documented in the repository docs.
+      - [ ] The documented example matches `issues.yml`.
+      - [ ] Future validator work can use the documentation as a reference.
+    labels:
+      - documentation
+      - "good first issue"
+    assignees:
+      - repo-maintainer
+    milestone: "v1.0"
+
+  - title: "Add issue validation check for required fields"
+    body: |
+      ## Goal
+
+      Implement validation that requires every issue definition to include both
+      `title` and `body`.
+
+      ## Context
+
+      The Bash wrapper will create GitHub issues only after the validator
+      confirms the YAML file is valid. Missing required fields should fail fast
+      before any GitHub API calls are made.
+
+      ## Tasks
+
+      - [ ] Load `issues.yml` from a file path.
+      - [ ] Verify the root-level `issues:` array exists.
+      - [ ] Verify each issue has a non-empty `title`.
+      - [ ] Verify each issue has a non-empty `body`.
+      - [ ] Return a non-zero exit code when validation fails.
+
+      ## Done when
+
+      - [ ] Invalid YAML fails with a clear error.
+      - [ ] Missing `title` fails validation.
+      - [ ] Missing `body` fails validation.
+      - [ ] A valid file exits successfully.
