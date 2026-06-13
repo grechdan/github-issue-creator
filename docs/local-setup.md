@@ -50,3 +50,14 @@ gh auth login
 - [ ] `cargo --version` prints a Cargo version.
 - [ ] `gh --version` prints a GitHub CLI version.
 - [ ] `gh auth status` confirms GitHub CLI is authenticated.
+
+## Validator exit codes
+
+The Rust validator uses stable exit codes so it can be called safely from Bash and CI.
+
+| Exit code | Meaning |
+|---:|---|
+| 0 | Validation passed |
+| 1 | Validation failed, file could not be read, or YAML could not be parsed |
+
+Validation success messages are printed to stdout. Validation errors are printed to stderr.
