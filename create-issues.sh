@@ -4,6 +4,7 @@ set -euo pipefail
 ISSUES_FILE="${1:-issues.yml}"
 VALIDATOR_MANIFEST="tools/issue-validator/Cargo.toml"
 GENERATED_DIR=".generated/issues"
+MANIFEST_FILE="${GENERATED_DIR}/manifest.txt"
 
 echo "Issue creation started."
 echo "Input file: ${ISSUES_FILE}"
@@ -18,23 +19,102 @@ if [[ ! -f "${VALIDATOR_MANIFEST}" ]]; then
   exit 1
 fi
 
-echo "Running Rust validator..."
+if ! command -v gh >/dev/null 2>&1; then
+  echo "Error: GitHub CLI is not installed or not available in PATH." >&2
+  exit 1
+fi
+
+echo "Checking GitHub CLI authentication..."
+gh auth status >/dev/null
+
+echo "Running Rust validator/generator..."
 
 cargo run \
   --quiet \
   --manifest-path "${VALIDATOR_MANIFEST}" \
-  -- "${ISSUES_FILE}"
+  -- "${ISSUES_FILE}" \
+     --out "${GENERATED_DIR}"
 
-echo "Validation completed successfully."
+echo "Validation and generation completed successfully."
 
-echo "Preparing generated output directory..."
-rm -rf "${GENERATED_DIR}"
-mkdir -p "${GENERATED_DIR}"
+if [[ ! -f "${MANIFEST_FILE}" ]]; then
+  echo "Error: generated manifest file does not exist: ${MANIFEST_FILE}" >&2
+  exit 1
+fi
 
-echo "Generation is not implemented yet."
-echo "Expected future output directory: ${GENERATED_DIR}"
+echo "Creating GitHub issues from generated output..."
 
-echo "Stopping before GitHub issue creation because generated output is not available yet."
-echo "This will be completed after Rust generation is implemented."
+created_count=0
 
-exit 0
+while IFS= read -r issue_dir || [[ -n "${issue_dir}" ]]; do
+  if [[ -z "${issue_dir}" ]]; then
+    continue
+  fi
+
+  title_file="${issue_dir}/title.txt"
+  body_file="${issue_dir}/body.md"
+  labels_file="${issue_dir}/labels.txt"
+  milestone_file="${issue_dir}/milestone.txt"
+  assignees_file="${issue_dir}/assignees.txt"
+
+  if [[ ! -f "${title_file}" ]]; then
+    echo "Error: missing generated title file: ${title_file}" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "${body_file}" ]]; then
+    echo "Error: missing generated body file: ${body_file}" >&2
+    exit 1
+  fi
+
+  title="$(<"${title_file}")"
+
+  if [[ -z "${title}" ]]; then
+    echo "Error: generated title is empty in: ${title_file}" >&2
+    exit 1
+  fi
+
+  echo "Creating issue: ${title}"
+
+  gh_args=(
+    issue create
+    --title "${title}"
+    --body-file "${body_file}"
+  )
+
+  if [[ -f "${labels_file}" ]]; then
+    while IFS= read -r label || [[ -n "${label}" ]]; do
+      if [[ -n "${label}" ]]; then
+        gh_args+=(--label "${label}")
+      fi
+    done < "${labels_file}"
+  fi
+
+  if [[ -f "${milestone_file}" ]]; then
+    milestone="$(<"${milestone_file}")"
+
+    if [[ -n "${milestone}" ]]; then
+      gh_args+=(--milestone "${milestone}")
+    fi
+  fi
+
+  if [[ -f "${assignees_file}" ]]; then
+    while IFS= read -r assignee || [[ -n "${assignee}" ]]; do
+      if [[ -n "${assignee}" ]]; then
+        gh_args+=(--assignee "${assignee}")
+      fi
+    done < "${assignees_file}"
+  fi
+
+  if ! created_url="$(gh "${gh_args[@]}")"; then
+    echo "Error: failed to create GitHub issue: ${title}" >&2
+    exit 1
+  fi
+
+  echo "Created: ${created_url}"
+
+  created_count=$((created_count + 1))
+done < "${MANIFEST_FILE}"
+
+echo "Issue creation completed."
+echo "Created ${created_count} GitHub issue(s)."
