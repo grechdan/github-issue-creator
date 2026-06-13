@@ -5,7 +5,6 @@ use anyhow::{
 };
 use clap::Parser;
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -24,7 +23,6 @@ struct IssuesFile {
     issues: Option<Vec<Issue>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct Issue {
     title: Option<String>,
@@ -41,21 +39,18 @@ fn main() -> Result<()> {
 
     let issues_file = load_issues_file(&cli.input)?;
 
-    let mut validation_errors = Vec::new();
+    let schema_errors = validate_schema(&issues_file);
 
-    validation_errors.extend(validate_schema(&issues_file));
-    validation_errors.extend(validate_duplicate_titles(&issues_file));
+    if !schema_errors.is_empty() {
+        eprintln!("Schema validation failed:");
 
-    if !validation_errors.is_empty() {
-        eprintln!("Validation failed:");
-
-        for error in &validation_errors {
+        for error in &schema_errors {
             eprintln!("- {error}");
         }
 
         bail!(
-            "Validation failed with {} error(s).",
-            validation_errors.len()
+            "Validation failed with {} schema error(s).",
+            schema_errors.len()
         );
     }
 
@@ -107,68 +102,6 @@ fn validate_schema(issues_file: &IssuesFile) -> Vec<String> {
 
         if is_missing_or_empty(&issue.body) {
             errors.push(format!("Issue {issue_number}: `body` is required."));
-        }
-    }
-
-    errors
-}
-
-/// Detect duplicate issue titles.
-///
-/// Chosen behavior:
-/// - leading and trailing whitespace is ignored
-/// - comparison is case-sensitive
-///
-/// So these are duplicates:
-/// - "Create validator"
-/// - "  Create validator  "
-///
-/// But these are not duplicates:
-/// - "Create validator"
-/// - "create validator"
-fn validate_duplicate_titles(issues_file: &IssuesFile) -> Vec<String> {
-    let mut errors = Vec::new();
-
-    let Some(issues) = &issues_file.issues else {
-        return errors;
-    };
-
-    if issues.is_empty() {
-        return errors;
-    }
-
-    let mut title_positions: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-
-    for (index, issue) in issues.iter().enumerate() {
-        let issue_number = index + 1;
-
-        let Some(title) = &issue.title else {
-            continue;
-        };
-
-        let normalized_title = title.trim();
-
-        if normalized_title.is_empty() {
-            continue;
-        }
-
-        title_positions
-            .entry(normalized_title.to_string())
-            .or_default()
-            .push(issue_number);
-    }
-
-    for (title, positions) in title_positions {
-        if positions.len() > 1 {
-            let positions_text = positions
-                .iter()
-                .map(|position| position.to_string())
-                .collect::<Vec<String>>()
-                .join(", ");
-
-            errors.push(format!(
-                "Duplicate title `{title}` found in issues: {positions_text}."
-            ));
         }
     }
 
