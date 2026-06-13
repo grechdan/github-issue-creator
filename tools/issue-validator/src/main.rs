@@ -8,6 +8,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -34,12 +35,19 @@ struct Issue {
     milestone: Option<String>,
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     println!("Starting validation for: {}", cli.input.display());
 
-    let issues_file = load_issues_file(&cli.input)?;
+    let issues_file = match load_issues_file(&cli.input) {
+        Ok(issues_file) => issues_file,
+        Err(error) => {
+            eprintln!("Validation failed.");
+            eprintln!("Error: {error:#}");
+            return ExitCode::from(1);
+        }
+    };
 
     let mut validation_errors = Vec::new();
 
@@ -47,24 +55,26 @@ fn main() -> Result<()> {
     validation_errors.extend(validate_duplicate_titles(&issues_file));
 
     if !validation_errors.is_empty() {
-        eprintln!("Validation failed:");
+        eprintln!("Validation failed.");
 
         for error in &validation_errors {
             eprintln!("- {error}");
         }
 
-        bail!(
-            "Validation failed with {} error(s).",
+        eprintln!(
+            "Failure summary: {} validation error(s).",
             validation_errors.len()
         );
+
+        return ExitCode::from(1);
     }
 
     let issue_count = issues_file.issues.as_ref().map_or(0, Vec::len);
 
     println!("Validation passed.");
-    println!("Validated {issue_count} issue definition(s).");
+    println!("Success summary: validated {issue_count} issue definition(s).");
 
-    Ok(())
+    ExitCode::SUCCESS
 }
 
 fn load_issues_file(path: &PathBuf) -> Result<IssuesFile> {
@@ -113,19 +123,6 @@ fn validate_schema(issues_file: &IssuesFile) -> Vec<String> {
     errors
 }
 
-/// Detect duplicate issue titles.
-///
-/// Chosen behavior:
-/// - leading and trailing whitespace is ignored
-/// - comparison is case-sensitive
-///
-/// So these are duplicates:
-/// - "Create validator"
-/// - "  Create validator  "
-///
-/// But these are not duplicates:
-/// - "Create validator"
-/// - "create validator"
 fn validate_duplicate_titles(issues_file: &IssuesFile) -> Vec<String> {
     let mut errors = Vec::new();
 
