@@ -5,8 +5,10 @@ use anyhow::{
 };
 use clap::Parser;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -23,6 +25,7 @@ struct IssuesFile {
     issues: Option<Vec<Issue>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct Issue {
     title: Option<String>,
@@ -32,34 +35,46 @@ struct Issue {
     milestone: Option<String>,
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     println!("Starting validation for: {}", cli.input.display());
 
-    let issues_file = load_issues_file(&cli.input)?;
+    let issues_file = match load_issues_file(&cli.input) {
+        Ok(issues_file) => issues_file,
+        Err(error) => {
+            eprintln!("Validation failed.");
+            eprintln!("Error: {error:#}");
+            return ExitCode::from(1);
+        }
+    };
 
-    let schema_errors = validate_schema(&issues_file);
+    let mut validation_errors = Vec::new();
 
-    if !schema_errors.is_empty() {
-        eprintln!("Schema validation failed:");
+    validation_errors.extend(validate_schema(&issues_file));
+    validation_errors.extend(validate_duplicate_titles(&issues_file));
 
-        for error in &schema_errors {
+    if !validation_errors.is_empty() {
+        eprintln!("Validation failed.");
+
+        for error in &validation_errors {
             eprintln!("- {error}");
         }
 
-        bail!(
-            "Validation failed with {} schema error(s).",
-            schema_errors.len()
+        eprintln!(
+            "Failure summary: {} validation error(s).",
+            validation_errors.len()
         );
+
+        return ExitCode::from(1);
     }
 
     let issue_count = issues_file.issues.as_ref().map_or(0, Vec::len);
 
     println!("Validation passed.");
-    println!("Validated {issue_count} issue definition(s).");
+    println!("Success summary: validated {issue_count} issue definition(s).");
 
-    Ok(())
+    ExitCode::SUCCESS
 }
 
 fn load_issues_file(path: &PathBuf) -> Result<IssuesFile> {
@@ -102,6 +117,55 @@ fn validate_schema(issues_file: &IssuesFile) -> Vec<String> {
 
         if is_missing_or_empty(&issue.body) {
             errors.push(format!("Issue {issue_number}: `body` is required."));
+        }
+    }
+
+    errors
+}
+
+fn validate_duplicate_titles(issues_file: &IssuesFile) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    let Some(issues) = &issues_file.issues else {
+        return errors;
+    };
+
+    if issues.is_empty() {
+        return errors;
+    }
+
+    let mut title_positions: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+
+    for (index, issue) in issues.iter().enumerate() {
+        let issue_number = index + 1;
+
+        let Some(title) = &issue.title else {
+            continue;
+        };
+
+        let normalized_title = title.trim();
+
+        if normalized_title.is_empty() {
+            continue;
+        }
+
+        title_positions
+            .entry(normalized_title.to_string())
+            .or_default()
+            .push(issue_number);
+    }
+
+    for (title, positions) in title_positions {
+        if positions.len() > 1 {
+            let positions_text = positions
+                .iter()
+                .map(|position| position.to_string())
+                .collect::<Vec<String>>()
+                .join(", ");
+
+            errors.push(format!(
+                "Duplicate title `{title}` found in issues: {positions_text}."
+            ));
         }
     }
 
